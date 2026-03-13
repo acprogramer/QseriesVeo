@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: qseriesveo-api
+    env: node
+    region: us-east
+    buildCommand: cd server && npm install
+    startCommand: cd server && node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+    plan: free
