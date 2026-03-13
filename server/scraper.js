@@ -4,6 +4,10 @@ import crypto from 'crypto';
 
 const BASE_URL = 'https://3cc5-don.mirror.pm';
 
+// Use proxy to bypass Cloudflare blocking datacenter IPs
+// Free proxy: allorigins.win (no rate limit, no auth required)
+const PROXY_BASE = 'https://api.allorigins.win/raw?url=';
+
 const HTTP_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -16,6 +20,20 @@ const HTTP_HEADERS = {
     'Sec-Fetch-Site': 'none',
     'Cache-Control': 'max-age=0'
 };
+
+/**
+ * Get URL via proxy to bypass Cloudflare
+ */
+async function getViaProxy(url) {
+    const proxyUrl = PROXY_BASE + encodeURIComponent(url);
+    const { data } = await axios.get(proxyUrl, { 
+        headers: HTTP_HEADERS,
+        timeout: 15000,
+        // Don't follow redirects automatically (proxy handles it)
+        maxRedirects: 0
+    });
+    return data;
+}
 
 /**
  * Node.js implementation of SHA-256
@@ -44,7 +62,7 @@ async function computeProofOfWork(challenge, difficulty = 3) {
  */
 async function fetchMovieDetails(pageUrl) {
     try {
-        const { data } = await axios.get(pageUrl, { headers: HTTP_HEADERS, timeout: 8000 });
+        const data = await getViaProxy(pageUrl);
         const $ = cheerio.load(data);
 
         // Get large image from og:image
@@ -120,8 +138,10 @@ async function search(query) {
         params.append('valor', query);
         params.append('Buscar', 'Buscar');
 
-        const { data } = await axios.post(searchUrl, params, {
-            headers: { ...HTTP_HEADERS, 'Content-Type': 'application/x-www-form-urlencoded' }
+        const proxyUrl = PROXY_BASE + encodeURIComponent(searchUrl);
+        const { data } = await axios.post(proxyUrl, params, {
+            headers: { ...HTTP_HEADERS, 'Content-Type': 'application/x-www-form-urlencoded' },
+            timeout: 15000
         });
         const $ = cheerio.load(data);
         const results = [];
@@ -187,7 +207,7 @@ async function getLatest() {
     try {
         const url = `${BASE_URL}/`;
         console.log('Fetching latest from:', url);
-        const { data } = await axios.get(url, { headers: HTTP_HEADERS, timeout: 15000 });
+        const data = await getViaProxy(url);
         console.log('Latest response length:', data.length);
         const $ = cheerio.load(data);
         const results = [];
@@ -266,7 +286,7 @@ async function getList(category = 'peliculas', page = 1) {
         }
 
         console.log(`Fetching category list: ${url}`);
-        const { data } = await axios.get(url, { headers: HTTP_HEADERS });
+        const data = await getViaProxy(url);
         const $ = cheerio.load(data);
         const results = [];
 
@@ -345,7 +365,7 @@ async function getList(category = 'peliculas', page = 1) {
 async function getMagnet(pageUrl) {
     try {
         console.log(`Getting magnet for: ${pageUrl}`);
-        const { data } = await axios.get(pageUrl, { headers: HTTP_HEADERS });
+        const data = await getViaProxy(pageUrl);
         const $ = cheerio.load(data);
 
         let magnet = $('a[href^="magnet:?"]').attr('href');
@@ -362,11 +382,12 @@ async function getMagnet(pageUrl) {
         }
 
         const validateUrl = `${BASE_URL}/api_validate_pow.php`;
-        const genResponse = await axios.post(validateUrl, {
+        const proxyValidateUrl = PROXY_BASE + encodeURIComponent(validateUrl);
+        const genResponse = await axios.post(proxyValidateUrl, {
             action: 'generate',
             content_id: parseInt(contentId),
             tabla: tabla
-        }, { headers: { ...HTTP_HEADERS, 'Content-Type': 'application/json' } });
+        }, { headers: { ...HTTP_HEADERS, 'Content-Type': 'application/json' }, timeout: 15000 });
 
         if (!genResponse.data || !genResponse.data.success) {
             throw new Error(genResponse.data?.error || 'Failed to generate challenge');
@@ -375,11 +396,11 @@ async function getMagnet(pageUrl) {
         const challenge = genResponse.data.challenge;
         const nonce = await computeProofOfWork(challenge, 3);
 
-        const valResponse = await axios.post(validateUrl, {
+        const valResponse = await axios.post(proxyValidateUrl, {
             action: 'validate',
             challenge: challenge,
             nonce: nonce
-        }, { headers: { ...HTTP_HEADERS, 'Content-Type': 'application/json' } });
+        }, { headers: { ...HTTP_HEADERS, 'Content-Type': 'application/json' }, timeout: 15000 });
 
         if (!valResponse.data || !valResponse.data.success) {
             throw new Error(valResponse.data?.error || 'Validation failed');
